@@ -36,6 +36,12 @@ class NoticesController < ActionController::Base
     error_class = notice['error']['class'].to_s
     error_message = notice['error']['message']
 
+    related_issue_id = nil
+    error_message.gsub! /\s*RELATED_TO=#(\d+)/ do
+      related_issue_id = $1.to_i if $1
+      ''
+    end
+
     # build filtered backtrace
     backtrace = notice['error']['backtrace'] rescue []
     filtered_backtrace = filter_backtrace project, backtrace
@@ -98,11 +104,19 @@ class NoticesController < ActionController::Base
     journal = issue.init_journal author, text
 
     # reopen issue if needed
-    if issue.status.blank? or issue.status.is_closed?                                                                                                        
+    if issue.status.blank? or issue.status.is_closed?
       issue.status = IssueStatus.find(:first, :conditions => {:is_default => true}, :order => 'position ASC')
     end
 
     issue.save!
+
+    # create issue relationship if related issue id is present
+    if related_issue_id && other_issue = Issue.find_by_id(related_issue_id)
+      IssueRelation.new(:relation_type => IssueRelation::TYPE_RELATES).tap do |rel|
+        rel.issue_from = issue
+        rel.issue_to = other_issue
+      end.save
+    end
     render :status => 200, :text => "Received bug report.\n<error-id>#{issue.id}</error-id>"
   end
 
