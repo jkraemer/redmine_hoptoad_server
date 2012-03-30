@@ -50,7 +50,7 @@ class NoticesController < ActionController::Base
     # build subject by removing method name and '[RAILS_ROOT]', make sure it fits in a varchar
     subject = redmine_params[:environment] ? "[#{redmine_params[:environment]}] " : ""
 
-    if error_class =~ /NoMethodError/
+    if error_class =~ /(NoMethodError|MetaModel::Error)/
       subject << error_message
     else
       subject << error_class
