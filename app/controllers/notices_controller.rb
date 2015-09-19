@@ -26,6 +26,19 @@ class NoticesController < ActionController::Base
 
   private
 
+  MARKUP = {
+    textile: {
+      h4: 'h4. ',
+      code_start: '<pre>',
+      code_end: '</pre>'
+    },
+    markdown: {
+      h4: '#### ',
+      code_start: '~~~',
+      code_end: '~~~'
+    }
+  }
+
   def create_or_update_issue(redmine_params, notice)
     # retrieve redmine objects referenced in redmine_params
 
@@ -100,19 +113,21 @@ class NoticesController < ActionController::Base
       issue.custom_values.create!(:value => 1, :custom_field => @occurences_field)
     end
 
+    markup = MARKUP[Setting.text_formatting.to_sym]
+
     # create the journal entry, update issue attributes
     retried_once = false # we retry once in case of a StaleObjectError
     begin
       issue = Issue.find issue.id # otherwise the save below resets the custom value from above. Also should reduce the chance to run into the staleobject problem.
       # update journal
-      text = "h4. Error message\n\n<pre>#{error_message}</pre>"
-      text << "\n\nh4. Filtered backtrace\n\n<pre>#{format_backtrace(filtered_backtrace)}</pre>" unless filtered_backtrace.blank?
-      text << "\n\nh4. Request\n\n<pre>#{format_hash notice['request']}</pre>" unless notice['request'].blank?
-      text << "\n\nh4. Session\n\n<pre>#{format_hash notice['session']}</pre>" unless notice['session'].blank?
+      text = "#{markup[:h4]} Error message\n\n#{markup[:code_start]}\n#{error_message}\n#{markup[:code_end]}\n"
+      text << "\n\n#{markup[:h4]} Filtered backtrace\n\n#{markup[:code_start]}\n#{format_backtrace(filtered_backtrace)}\n#{markup[:code_end]}\n" unless filtered_backtrace.blank?
+      text << "\n\n#{markup[:h4]} Request\n\n#{markup[:code_start]}\n#{format_hash notice['request']}\n#{markup[:code_end]}\n" unless notice['request'].blank?
+      text << "\n\n#{markup[:h4]} Session\n\n#{markup[:code_start]}\n#{format_hash notice['session']}\n#{markup[:code_end]}\n" unless notice['session'].blank?
       unless (env = (notice['server_environment'] || notice['environment'])).blank?
-        text << "\n\nh4. Environment\n\n<pre>#{format_hash env}</pre>"
+        text << "\n\n#{markup[:h4]} Environment\n\n#{markup[:code_start]}\n#{format_hash env}\n#{markup[:code_end]}\n"
       end
-      text << "\n\nh4. Full backtrace\n\n<pre>#{format_backtrace backtrace}</pre>" unless backtrace.blank?
+      text << "\n\n#{markup[:h4]} Full backtrace\n\n#{markup[:code_start]}\n#{format_backtrace backtrace}\n#{markup[:code_end]}\n" unless backtrace.blank?
       journal = issue.init_journal author, text
 
       # reopen issue if needed
@@ -131,6 +146,7 @@ class NoticesController < ActionController::Base
     end
     render :status => 200, :text => "Received bug report.\n<error-id>#{issue.id}</error-id>\n<id>#{issue.id}</id>" # newer Airbrake expects just <id>...
   end
+
 
   def format_hash(hash)
     PP.pp hash, ""
