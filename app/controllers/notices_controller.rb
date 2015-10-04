@@ -5,8 +5,6 @@ class NoticesController < ActionController::Base
   before_filter :check_enabled
   before_filter :find_or_create_custom_fields
 
-  unloadable
-
   TRACE_FILTERS = [
     /^On\sline\s#\d+\sof/,
     /^\d+:/

@@ -17,6 +17,6 @@ rescue LoadError
 end
 
 Rails.configuration.to_prepare do
-  require_dependency 'redmine_hoptoad_server/patches/issue_patch'
+  RedmineHoptoadServer::Patches::IssuePatch.apply
 end
 
