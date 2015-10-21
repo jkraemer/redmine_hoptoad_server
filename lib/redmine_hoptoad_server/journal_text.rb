@@ -27,10 +27,6 @@ module RedmineHoptoadServer
       def format_backtrace(lines)
         lines.map{ |line| "#{line['file']}:#{line['number']}#{":in #{line['method']}" if line['method']}" }.join("\n")
       end
-
-      def indent(string)
-        string.lines.map{|s|s.prepend "    "}.join("\n")
-      end
     end
 
     class Textile < Formatter
@@ -59,6 +55,12 @@ module RedmineHoptoadServer
           end
           text << "\n\n#### Full backtrace\n\n#{indent format_backtrace @backtrace}\n" unless @backtrace.blank?
         end
+      end
+
+      private
+
+      def indent(string)
+        string.lines.map{|s|s.prepend "    "}.join
       end
     end
 
