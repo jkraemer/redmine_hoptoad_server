@@ -142,33 +142,49 @@ class NoticesController < ActionController::Base
     true
   end
 
+  def custom_field_for(name)
+    if Rails::VERSION::MAJOR == 3
+      IssueCustomField.find_or_initialize_by_name name
+    else
+      IssueCustomField.find_or_initialize_by name: name
+    end
+  end
+
+  def project_custom_field_for(name)
+    if Rails::VERSION::MAJOR == 3
+      ProjectCustomField.find_or_initialize_by_name name
+    else
+      ProjectCustomField.find_or_initialize_by name: name
+    end
+  end
+
   # make sure the custom fields exist, and load them for further usage
   def find_or_create_custom_fields
-    @error_class_field = IssueCustomField.find_or_initialize_by(name: 'Error class')
+    @error_class_field = custom_field_for 'Error class'
     if @error_class_field.new_record?
       @error_class_field.attributes = {:field_format => 'string', :searchable => true, :is_filter => true}
       @error_class_field.save(:validate => false)
     end
 
-    @occurences_field = IssueCustomField.find_or_initialize_by(name: '# Occurences')
+    @occurences_field = custom_field_for '# Occurences'
     if @occurences_field.new_record?
       @occurences_field.attributes = {:field_format => 'int', :default_value => '0', :is_filter => true}
       @occurences_field.save(:validate => false)
     end
 
-    @environment_field = IssueCustomField.find_or_initialize_by(name: 'Environment')
+    @environment_field = custom_field_for 'Environment'
     if @environment_field.new_record?
       @environment_field.attributes = {:field_format => 'string', :searchable => true, :is_filter => true}
       @environment_field.save(:validate => false)
     end
 
-    @trace_filter_field = ProjectCustomField.find_or_initialize_by(name: 'Backtrace filter')
+    @trace_filter_field = project_custom_field_for 'Backtrace filter'
     if @trace_filter_field.new_record?
       @trace_filter_field.attributes = {:field_format => 'text'}
       @trace_filter_field.save(:validate => false)
     end
 
-    @repository_root_field = ProjectCustomField.find_or_initialize_by(name: 'Repository root')
+    @repository_root_field = project_custom_field_for 'Repository root'
     if @repository_root_field.new_record?
       @repository_root_field.attributes = {:field_format => 'string'}
       @repository_root_field.save(:validate => false)
