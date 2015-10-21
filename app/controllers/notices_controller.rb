@@ -1,91 +1,70 @@
-require 'pp'
 
 class NoticesController < ActionController::Base
 
-  before_filter :check_enabled
-  before_filter :find_or_create_custom_fields
-
-  TRACE_FILTERS = [
-    /^On\sline\s#\d+\sof/,
-    /^\d+:/
-  ]
+  before_filter :parse_request, :check_enabled, :find_or_create_custom_fields
 
   def create_v2
-    #logger.debug {"received v2 request:\n#{@notice.inspect}\nwith redmine_params:\n#{@redmine_params.inspect}"}
-    create_or_update_issue @redmine_params, @notice
+    @req = RedmineHoptoadServer::Request.new @notice, @redmine_params
+    create_or_update_issue
   end
 
   def create
-    #logger.debug {"received v1 request:\n#{@notice.inspect}\nwith redmine_params:\n#{@redmine_params.inspect}"}
-    notice = v2_notice_hash(@notice)
-    #logger.debug {"transformed arguments:\n#{notice.inspect}"}
-    create_or_update_issue @redmine_params, notice
+    @req = RedmineHoptoadServer::OldStyleRequest.new @notice, @redmine_params
+    create_or_update_issue
   end
 
   private
 
-  def create_or_update_issue(redmine_params, notice)
+  # TODO wrap in db transaction?
+  def create_or_update_issue
     # retrieve redmine objects referenced in redmine_params
 
     # project
-    unless project = Project.find_by_identifier(redmine_params["project"])
-      msg = "could not log error, project #{redmine_params["project"]} not found."
+    unless project = Project.find_by_identifier(@redmine_params["project"])
+      msg = "could not log error, project #{@redmine_params["project"]} not found."
       Rails.logger.error msg
       render :text => msg, :status => 404 and return
     end
 
     # tracker
-    unless tracker = project.trackers.find_by_name(redmine_params["tracker"])
-      msg = "could not log error, tracker #{redmine_params["tracker"]} not found."
+    unless tracker = project.trackers.find_by_name(@redmine_params["tracker"])
+      msg = "could not log error, tracker #{@redmine_params["tracker"]} not found."
       Rails.logger.error msg
       render :text => msg, :status => 404 and return
     end
 
-    # user
-    author = User.find_by_login(redmine_params["author"]) || User.anonymous
+    req = RedmineHoptoadServer::Request.new @notice, @redmine_params
+    req.project_trace_filters = @project.custom_value_for(@trace_filter_field).value.split(/[,\s\n\r]+/) rescue []
 
-    # error class and message
-    error_class = notice['error']['class'].to_s
-    error_message = notice['error']['message']
+    repo_root = req.repo_root || (project.custom_value_for(@repository_root_field).value.gsub(/\/$/,'') rescue nil)
 
-    # build filtered backtrace
-    backtrace = notice['error']['backtrace'] rescue []
-    filtered_backtrace = filter_backtrace project, backtrace
-    error_line = filtered_backtrace.first
+    subject = req.subject
+    author  = req.author
 
-    # build subject by removing method name and '[RAILS_ROOT]', make sure it fits in a varchar
-    subject = redmine_params["environment"] ? "[#{redmine_params["environment"]}] " : ""
-    subject << error_class
-    subject << " in #{cleanup_path( error_line['file'] )[0,(250-subject.length)]}:#{error_line['number']}" if error_line
-
-    # build description including a link to source repository
-    description = "Redmine Notifier reported an Error"
-    unless filtered_backtrace.blank?
-      repo_root = redmine_params["repository_root"]
-      repo_root ||= project.custom_value_for(@repository_root_field).value.gsub(/\/$/,'') rescue nil
-      description << " related to source:#{repo_root}/#{cleanup_path error_line['file']}#L#{error_line['number']}"
-    end
-
+    # create the issue or update an existing one
     issue = Issue.find_by_subject_and_project_id_and_tracker_id_and_author_id(subject, project.id, tracker.id, author.id)
     if issue.nil?
       # new issue
-      issue = Issue.new(:subject => subject, :project_id => project.id, :tracker_id => tracker.id, :author_id => author.id)
-
-      # set standard redmine issue fields
-      issue.category = IssueCategory.find_by_name(redmine_params["category"]) unless redmine_params["category"].blank?
-      issue.assigned_to = (User.find_by_login(redmine_params["assigned_to"]) || Group.find_by_lastname(redmine_params["assigned_to"])) unless redmine_params["assigned_to"].blank?
-      issue.priority_id = redmine_params["priority"].blank? ?
-        IssuePriority.default.id :
-        redmine_params["priority"]
-      issue.description = description
+      issue = Issue.new(
+        project_id: project.id,
+        tracker_id: tracker.id,
+        author: author,
+        assigned_to: req.assignee,
+        category: req.category,
+        priority_id: req.priority,
+        subject: subject,
+        description: req.description(repo_root)
+      )
 
       ensure_project_has_fields(project)
       ensure_tracker_has_fields(tracker)
 
       # set custom field error class
-      issue.custom_values.build(:custom_field => @error_class_field, :value => error_class)
-      unless redmine_params["environment"].blank?
-        issue.custom_values.build(:custom_field => @environment_field, :value => redmine_params["environment"])
+      issue.custom_values.build(custom_field: @error_class_field,
+                                value: req.error_class)
+      unless req.environment.blank?
+        issue.custom_values.build(custom_field: @environment_field,
+                                  value: req.environment)
       end
       issue.skip_notification = true
       issue.save!
@@ -102,16 +81,8 @@ class NoticesController < ActionController::Base
     retried_once = false # we retry once in case of a StaleObjectError
     begin
       issue = Issue.find issue.id # otherwise the save below resets the custom value from above. Also should reduce the chance to run into the staleobject problem.
-      # update journal
-      text = "h4. Error message\n\n<pre>#{error_message}</pre>"
-      text << "\n\nh4. Filtered backtrace\n\n<pre>#{format_backtrace(filtered_backtrace)}</pre>" unless filtered_backtrace.blank?
-      text << "\n\nh4. Request\n\n<pre>#{format_hash notice['request']}</pre>" unless notice['request'].blank?
-      text << "\n\nh4. Session\n\n<pre>#{format_hash notice['session']}</pre>" unless notice['session'].blank?
-      unless (env = (notice['server_environment'] || notice['environment'])).blank?
-        text << "\n\nh4. Environment\n\n<pre>#{format_hash env}</pre>"
-      end
-      text << "\n\nh4. Full backtrace\n\n<pre>#{format_backtrace backtrace}</pre>" unless backtrace.blank?
-      journal = issue.init_journal author, text
+      # create journal
+      issue.init_journal author, req.journal_text
 
       # reopen issue if needed
       if issue.status.blank? or issue.status.is_closed?
@@ -130,70 +101,20 @@ class NoticesController < ActionController::Base
     render :status => 200, :text => "Received bug report.\n<error-id>#{issue.id}</error-id>\n<id>#{issue.id}</id>" # newer Airbrake expects just <id>...
   end
 
-  def format_hash(hash)
-    PP.pp hash, ""
-  end
-
-  # transforms the old-style notice structure into the hoptoad v2 data format
-  def v2_notice_hash(notice)
-    {
-      'error' => {
-        'class' => notice['error_class'],
-        'message' => notice['error_message'],
-        'backtrace' => parse_backtrace(notice['back'].blank? ? notice['backtrace'] : notice['back'])
-      },
-      'environment' => (notice['server_environment'].blank? ? notice['environment'] : notice['server_environment']),
-      'session' => notice['session'],
-      'request' => notice['request']
-    }
-  end
-
-  def parse_backtrace(lines)
-    lines.map do |line|
-      if line =~ /(.+):(\d+)(:in `(.+)')?/
-        { 'number' => $2.to_i, 'method' => $4, 'file' => $1 }
-      else
-        logger.error "could not parse backtrace line:\n#{line}"
-        nil
-      end
-    end.compact
-  end
-
-  def filter_backtrace(project, backtrace)
-    project_trace_filters = project.custom_value_for(@trace_filter_field).value.split(/[,\s\n\r]+/) rescue []
-    backtrace.reject do |line|
-      file = line['file'] rescue nil
-      if file
-        (TRACE_FILTERS + project_trace_filters).map do |filter|
-          file.scan(filter)
-        end.flatten.compact.uniq.any?
-      else
-        Rails.logger.error "invalid backtrace element #{line.inspect}"
-        true
-      end
-    end
-  end
-
-  def format_backtrace(lines)
-    lines.map{ |line| "#{line['file']}:#{line['number']}#{":in #{line['method']}" if line['method']}" }.join("\n")
-  end
-
-  def cleanup_path(path)
-    path.gsub(/\[(PROJECT|RAILS)_ROOT\]\//,'')
-  end
-
-  # before_filter, checks api key and parses request
+  # before_filter, checks api key
   def check_enabled
-    User.current = nil
-    parse_request
     unless @api_key.present? and @api_key == Setting.mail_handler_api_key
       render :text => 'Access denied. Redmine API is disabled or key is invalid.', :status => 403
       false
     end
   end
 
+  # before_filter, parses the request
   def parse_request
-    logger.debug { "hoptoad error notification:\n#{request.raw_post}" }
+    if logger.debug?
+      logger.debug { "hoptoad error notification:\n#{request.raw_post}" }
+    end
+    User.current = nil
     case params[:action]
     when 'create_v2'
       if defined?(Nokogiri)

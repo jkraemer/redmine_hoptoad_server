@@ -1,11 +1,11 @@
-require File.dirname(__FILE__) + '/../test_helper'
+require File.expand_path('../../test_helper', __FILE__)
 
 class NoticesControllerTest < ActionController::TestCase
   fixtures :projects, :users, :trackers, :projects_trackers, :enumerations, :issue_statuses
 
   def setup
     Setting.mail_handler_api_key = 'asdfghjk'
-    @project = Project.find :first
+    @project = Project.find 1
     @tracker = @project.trackers.first
   end
 

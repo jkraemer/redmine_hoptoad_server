@@ -1,5 +1,11 @@
 # Load the normal Rails helper
-require File.expand_path(File.dirname(__FILE__) + '/../../../test/test_helper')
+require File.expand_path File.dirname(__FILE__) + '/../../../test/test_helper'
+
+class ActiveSupport::TestCase
+  def v2_notice_xml
+    IO.read File.join File.dirname(__FILE__), 'fixtures', 'v2_message.xml'
+  end
+end
 
 class ActionController::TestCase
 
