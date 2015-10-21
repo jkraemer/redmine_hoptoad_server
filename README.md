@@ -1,0 +1,96 @@
+Hoptoad Server [![Build Status](https://travis-ci.org/jkraemer/redmine_hoptoad_server.svg?branch=master)](https://travis-ci.org/jkraemer/redmine_hoptoad_server)
+==============
+
+This is a simple Redmine plugin that makes Redmine act like an Airbrake
+(http://airbrake.io/) (formerly known as Hoptoad) server. All exceptions caught
+and sent by HoptoadNotifier or Airbrake client libraries will create or update
+an issue in Redmine.
+
+Installation & Configuration
+----------------------------
+
+Just install the Plugin following the general Redmine plugin installation
+instructions at http://www.redmine.org/wiki/redmine/Plugins.
+
+Then, go to Administration -> Settings -> Incoming emails in your Redmine and
+generate an API key.
+
+Now, install Airbrake following the excellent instructions at
+http://github.com/airbrake/airbrake.
+
+The Redmine Hoptoad Server supports the older Hoptoad API (v1) as well as
+Hoptoad v2 / Airbrake.
+
+When it comes to creating your config/initializers/airbrake.rb file, deviate
+from the standard and put in something like this:
+
+
+    Airbrake.configure do |config|
+      config.api_key = {:project => 'my_redmine_project_identifier', # the identifier you specified for your project in Redmine
+                        :tracker => 'Bug',                           # the name of your Tracker of choice in Redmine
+                        :api_key => 'my_redmine_api_key',            # the key you generated before in Redmine (NOT YOUR HOPTOAD API KEY!)
+                        :category => 'Development',                  # the name of a ticket category (optional.)
+                        :assigned_to => 'admin',                     # the login of a user the ticket should get assigned to by default (optional.)
+                        :priority => 5,                              # the default priority (use a number, not a name. optional.)
+                        :environment => 'staging',                   # application environment, gets prepended to the issue's subject and is stored as a custom issue field. useful to distinguish errors on a test system from those on the production system (optional).
+                        :repository_root => '/some/path'             # this optional argument overrides the project wide repository root setting (see below).
+                       }.to_yaml
+      config.host = 'my_redmine_host.com'                            # the hostname your Redmine runs at
+      config.port = 443                                              # the port your Redmine runs at
+      config.secure = true                                           # sends data to your server via SSL (optional.)
+    end
+
+You're done. You can start receiving your Exceptions in Redmine!
+
+
+### More Configuration (please read on!)
+
+After you received your first exception in Redmine, you will notice two new
+custom fields in the project(s) you've received the exceptions for. Those are
+*Backtrace filter* and *Repository root*.
+
+#### Backtrace filter
+
+If you'd like to (and we really recommend you do!) filter the backtraces that
+Notifier reports, you can add comma separated strings to that field. Every line
+in a backtrace will be scanned against those strings and matching lines *will
+be removed*. I usually set my filter to `[GEM_ROOT]`, but if you're using
+plugins which tend to clutter up your backtraces, you might want to include
+those as well. Like this for example: `[GEM_ROOT],[RAILS_ROOT]/vendor/plugins/newrelic_rpm`.
+
+#### Repository root
+
+All Issues created will have a source link in their description which --
+provided that you have your source repository linked to your Redmine project --
+leads you directly to the file and line in your code that has caused the
+exception. Your repository structure most likely won't match the structure of
+your deployed code, so you can add an additional repository root.  Just use
+"trunk" for a general SVN setup for instance.
+
+You may use the `:repository_root` option in your application's airbrake.rb to
+override this setting with a custom value. This is helful in case you have
+multiple applications in the same repository reporting errors to the same
+Redmine project.
+
+#### Dependencies
+
+[Safe YAML](https://github.com/dtao/safe_yaml). For parsing Airbrake v2
+requests the plugin also depends on Nokogiri.
+
+Add to your Redmine's Gemfile.local:
+
+    gem 'safe_yaml'
+    gem 'nokogiri'
+
+License
+-------
+
+GPL
+
+
+Authors
+-------
+
+Jan Schulz-Hofen, Planio GmbH (http://plan.io)
+Jens Kraemer (jk@jkraemer.net)
+
