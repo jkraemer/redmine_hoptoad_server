@@ -1,4 +1,4 @@
 group :test do
-  gem 'airbrake'
+  gem 'airbrake', '< 5.0'
 end
 
