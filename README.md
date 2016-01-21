@@ -1,6 +1,14 @@
 Hoptoad Server [![Build Status](https://travis-ci.org/jkraemer/redmine_hoptoad_server.svg?branch=master)](https://travis-ci.org/jkraemer/redmine_hoptoad_server)
 ==============
 
+Important
+---------
+
+I won't maintain this fork any longer. Have a look at the new
+[redmine_airbrake](https://github.com/jkraemer/redmine_airbrake) plugin
+instead, which is a complete rewrite and also supports Airbrake's newer JSON
+based API.
+
 This is a simple Redmine plugin that makes Redmine act like an Airbrake
 (http://airbrake.io/) (formerly known as Hoptoad) server. All exceptions caught
 and sent by HoptoadNotifier or Airbrake client libraries will create or update
